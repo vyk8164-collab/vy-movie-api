@@ -1,0 +1,27 @@
+﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+
+namespace ConnectDB.Models
+{
+    [Table("Movies")]
+    public class Movie
+    {
+        [Key]
+        public int Id { get; set; }
+
+        [Required]
+        [StringLength(200)]
+        public string Title { get; set; } = string.Empty;
+
+        [StringLength(1000)]
+        public string? Description { get; set; }
+
+        public DateTime ReleaseDate { get; set; }
+
+        public int Duration { get; set; }
+
+        public double RatingAvg { get; set; }
+        public string? PosterUrl { get; set; }   // ảnh phim
+        public string? TrailerUrl { get; set; }  // trailer
+    }
+}
