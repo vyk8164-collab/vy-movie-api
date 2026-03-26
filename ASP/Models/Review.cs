@@ -9,20 +9,17 @@ namespace ConnectDB.Models
         [Key]
         public int Id { get; set; }
 
-        [Required]
         public int MovieId { get; set; }
-
-        [Required]
-        [StringLength(100)]
-        public string UserName { get; set; } = string.Empty;
+        public int UserId { get; set; }
 
         [Range(1, 5)]
         public int Rating { get; set; }
 
-        [StringLength(1000)]
         public string? Comment { get; set; }
 
         public DateTime CreatedAt { get; set; }
 
+        public Movie? Movie { get; set; }
+        public User? User { get; set; }
     }
 }

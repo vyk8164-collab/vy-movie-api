@@ -23,5 +23,9 @@ namespace ConnectDB.Models
         public double RatingAvg { get; set; }
         public string? PosterUrl { get; set; }   // ảnh phim
         public string? TrailerUrl { get; set; }  // trailer
+        public ICollection<MovieActor>? MovieActors { get; set; }
+        public ICollection<MovieGenre>? MovieGenres { get; set; }
+        public ICollection<Review>? Reviews { get; set; }
+        public string? VideoUrl { get; set; }
     }
 }

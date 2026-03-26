@@ -18,5 +18,6 @@ namespace ConnectDB.Models
         [StringLength(1000)]
         public string? Bio { get; set; }
         public string? AvatarUrl { get; set; }
+        public ICollection<MovieActor>? MovieActors { get; set; }
     }
 }
