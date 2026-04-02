@@ -17,7 +17,16 @@ namespace ConnectDB.Models
 
         [StringLength(1000)]
         public string? Bio { get; set; }
+
         public string? AvatarUrl { get; set; }
+
         public ICollection<MovieActor>? MovieActors { get; set; }
+
+        // 👉 AUDIT (thêm giống Movie)
+        public string? CreatedBy { get; set; }
+        public DateTime CreatedDate { get; set; }
+
+        public string? UpdatedBy { get; set; }
+        public DateTime? UpdatedDate { get; set; }
     }
 }

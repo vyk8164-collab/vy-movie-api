@@ -13,20 +13,57 @@ public class GenreController : ControllerBase
         _context = context;
     }
 
+    // GET ALL
     [HttpGet]
     public IActionResult GetAll()
     {
         return Ok(_context.Genres.ToList());
     }
 
-    [HttpPost]
-    public IActionResult Create(Genre genre)
+    // GET BY ID (thêm cho chuẩn)
+    [HttpGet("{id}")]
+    public IActionResult GetById(int id)
     {
-        _context.Genres.Add(genre);
-        _context.SaveChanges();
+        var genre = _context.Genres.Find(id);
+        if (genre == null) return NotFound();
         return Ok(genre);
     }
 
+    // CREATE (có audit)
+    [HttpPost]
+    public IActionResult Create(Genre genre)
+    {
+        genre.CreatedBy = "admin";
+        genre.CreatedDate = DateTime.Now;
+
+        genre.UpdatedBy = "admin";
+        genre.UpdatedDate = DateTime.Now;
+
+        _context.Genres.Add(genre);
+        _context.SaveChanges();
+
+        return Ok(genre);
+    }
+
+    // UPDATE (thêm cho đủ CRUD)
+    [HttpPut("{id}")]
+    public IActionResult Update(int id, Genre updated)
+    {
+        var genre = _context.Genres.Find(id);
+        if (genre == null) return NotFound();
+
+        genre.Name = updated.Name;
+
+        // audit
+        genre.UpdatedBy = "admin";
+        genre.UpdatedDate = DateTime.Now;
+
+        _context.SaveChanges();
+
+        return Ok(genre);
+    }
+
+    // DELETE
     [HttpDelete("by-name/{name}")]
     public IActionResult DeleteGenre(string name)
     {

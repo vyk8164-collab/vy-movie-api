@@ -27,5 +27,10 @@ namespace ConnectDB.Models
         public ICollection<MovieGenre>? MovieGenres { get; set; }
         public ICollection<Review>? Reviews { get; set; }
         public string? VideoUrl { get; set; }
+        public string? CreatedBy { get; set; }
+        public DateTime CreatedDate { get; set; }
+
+        public string? UpdatedBy { get; set; }
+        public DateTime? UpdatedDate { get; set; }
     }
 }

@@ -14,7 +14,7 @@ public class MovieController : ControllerBase
         _context = context;
     }
 
-    // GET all (kèm actor + genre + review)
+    // GET ALL
     [HttpGet]
     public IActionResult GetAll()
     {
@@ -24,36 +24,44 @@ public class MovieController : ControllerBase
             .Include(m => m.MovieGenres)
                 .ThenInclude(mg => mg.Genre)
             .Include(m => m.Reviews)
+                .ThenInclude(r => r.User) // 👉 thêm luôn cho chuẩn
             .ToList();
 
         return Ok(movies);
     }
 
-    // GET by id
+    // GET BY ID
     [HttpGet("{id}")]
     public IActionResult GetById(int id)
     {
         var movie = _context.Movies
             .Include(m => m.MovieActors).ThenInclude(ma => ma.Actor)
             .Include(m => m.MovieGenres).ThenInclude(mg => mg.Genre)
-            .Include(m => m.Reviews)
-    .ThenInclude(r => r.User);
+            .Include(m => m.Reviews).ThenInclude(r => r.User)
+            .FirstOrDefault(m => m.Id == id);
 
         if (movie == null) return NotFound();
 
         return Ok(movie);
     }
 
-    // POST
+    // CREATE
     [HttpPost]
     public IActionResult Create(Movie movie)
     {
+        movie.CreatedBy = "admin";
+        movie.CreatedDate = DateTime.Now;
+
+        movie.UpdatedBy = "admin";
+        movie.UpdatedDate = DateTime.Now;
+
         _context.Movies.Add(movie);
         _context.SaveChanges();
+
         return Ok(movie);
     }
 
-    // PUT
+    // UPDATE
     [HttpPut("{id}")]
     public IActionResult Update(int id, Movie updated)
     {
@@ -67,7 +75,11 @@ public class MovieController : ControllerBase
         movie.PosterUrl = updated.PosterUrl;
         movie.TrailerUrl = updated.TrailerUrl;
 
+        movie.UpdatedBy = "admin";
+        movie.UpdatedDate = DateTime.Now;
+
         _context.SaveChanges();
+
         return Ok(movie);
     }
 
