@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
 using ConnectDB.Data;
 using ConnectDB.Models;
 
@@ -14,7 +15,9 @@ public class MovieController : ControllerBase
         _context = context;
     }
 
-    // GET ALL + Pagination + Search + Filter
+    // ========================
+    // GET ALL (PUBLIC)
+    // ========================
     [HttpGet]
     public async Task<IActionResult> GetAll(
         int page = 1,
@@ -50,7 +53,6 @@ public class MovieController : ControllerBase
                 m.Title,
                 m.PosterUrl,
                 m.RatingAvg,
-
                 Genres = m.MovieGenres.Select(g => g.Genre.Name),
                 Actors = m.MovieActors.Select(a => a.Actor.Name)
             })
@@ -66,7 +68,9 @@ public class MovieController : ControllerBase
         });
     }
 
-    // GET BY ID
+    // ========================
+    // GET BY ID (PUBLIC)
+    // ========================
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
@@ -95,7 +99,7 @@ public class MovieController : ControllerBase
                     r.Rating,
                     r.Comment,
                     r.CreatedAt,
-                    User = r.User.Username // ❌ không trả password
+                    User = r.User.Username
                 })
             })
             .FirstOrDefaultAsync();
@@ -118,7 +122,10 @@ public class MovieController : ControllerBase
         });
     }
 
-    // CREATE
+    // ========================
+    // CREATE (ADMIN ONLY)
+    // ========================
+    [Authorize(Roles = "Admin")]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] Movie movie)
     {
@@ -149,7 +156,10 @@ public class MovieController : ControllerBase
         });
     }
 
-    // UPDATE
+    // ========================
+    // UPDATE (ADMIN ONLY)
+    // ========================
+    [Authorize(Roles = "Admin")]
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] Movie updated)
     {
@@ -195,7 +205,10 @@ public class MovieController : ControllerBase
         });
     }
 
-    // SOFT DELETE
+    // ========================
+    // DELETE (ADMIN ONLY)
+    // ========================
+    [Authorize(Roles = "Admin")]
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
