@@ -9,7 +9,7 @@ namespace ConnectDB.Models
         [Key]
         public int Id { get; set; }
 
-        [Required]
+        [Required(ErrorMessage = "Tên không được để trống")]
         [StringLength(150)]
         public string Name { get; set; } = string.Empty;
 
@@ -22,11 +22,14 @@ namespace ConnectDB.Models
 
         public ICollection<MovieActor>? MovieActors { get; set; }
 
-        // 👉 AUDIT (thêm giống Movie)
+        // AUDIT
         public string? CreatedBy { get; set; }
         public DateTime CreatedDate { get; set; }
 
         public string? UpdatedBy { get; set; }
         public DateTime? UpdatedDate { get; set; }
+
+        // SOFT DELETE
+        public bool IsDeleted { get; set; } = false;
     }
 }

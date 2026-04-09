@@ -16,7 +16,9 @@ namespace ConnectDB.Models
         [Required]
         public string Password { get; set; } = string.Empty;
 
-        // navigation
+        // 🔥 THÊM DÒNG NÀY
+        public string Role { get; set; } = "User";
+
         public ICollection<Review>? Reviews { get; set; }
     }
 }

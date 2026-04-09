@@ -1,6 +1,7 @@
 ﻿using ConnectDB.Data;
 using ConnectDB.Models;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -13,68 +14,147 @@ public class GenreController : ControllerBase
         _context = context;
     }
 
-    // GET ALL
+    // GET ALL + Pagination
     [HttpGet]
-    public IActionResult GetAll()
+    public async Task<IActionResult> GetAll(int page = 1, int pageSize = 10)
     {
-        return Ok(_context.Genres.ToList());
+        var genres = await _context.Genres
+            .Where(g => !g.IsDeleted)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        return Ok(new
+        {
+            success = true,
+            message = "Lấy danh sách genre thành công",
+            data = genres
+        });
     }
 
-    // GET BY ID (thêm cho chuẩn)
+    // GET BY ID
     [HttpGet("{id}")]
-    public IActionResult GetById(int id)
+    public async Task<IActionResult> GetById(int id)
     {
-        var genre = _context.Genres.Find(id);
-        if (genre == null) return NotFound();
-        return Ok(genre);
+        var genre = await _context.Genres
+            .FirstOrDefaultAsync(g => g.Id == id && !g.IsDeleted);
+
+        if (genre == null)
+        {
+            return NotFound(new
+            {
+                success = false,
+                message = "Không tìm thấy genre",
+                data = (object?)null
+            });
+        }
+
+        return Ok(new
+        {
+            success = true,
+            message = "Lấy dữ liệu thành công",
+            data = genre
+        });
     }
 
-    // CREATE (có audit)
+    // CREATE
     [HttpPost]
-    public IActionResult Create(Genre genre)
+    public async Task<IActionResult> Create([FromBody] Genre genre)
     {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                message = "Dữ liệu không hợp lệ",
+                data = ModelState
+            });
+        }
+
         genre.CreatedBy = "admin";
         genre.CreatedDate = DateTime.Now;
-
         genre.UpdatedBy = "admin";
         genre.UpdatedDate = DateTime.Now;
+        genre.IsDeleted = false;
 
-        _context.Genres.Add(genre);
-        _context.SaveChanges();
+        await _context.Genres.AddAsync(genre);
+        await _context.SaveChangesAsync();
 
-        return Ok(genre);
+        return Ok(new
+        {
+            success = true,
+            message = "Tạo genre thành công",
+            data = genre
+        });
     }
 
-    // UPDATE (thêm cho đủ CRUD)
+    // UPDATE
     [HttpPut("{id}")]
-    public IActionResult Update(int id, Genre updated)
+    public async Task<IActionResult> Update(int id, [FromBody] Genre updated)
     {
-        var genre = _context.Genres.Find(id);
-        if (genre == null) return NotFound();
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                message = "Dữ liệu không hợp lệ",
+                data = ModelState
+            });
+        }
+
+        var genre = await _context.Genres.FindAsync(id);
+
+        if (genre == null || genre.IsDeleted)
+        {
+            return NotFound(new
+            {
+                success = false,
+                message = "Không tìm thấy genre",
+                data = (object?)null
+            });
+        }
 
         genre.Name = updated.Name;
-
-        // audit
         genre.UpdatedBy = "admin";
         genre.UpdatedDate = DateTime.Now;
 
-        _context.SaveChanges();
+        await _context.SaveChangesAsync();
 
-        return Ok(genre);
+        return Ok(new
+        {
+            success = true,
+            message = "Cập nhật genre thành công",
+            data = genre
+        });
     }
 
-    // DELETE
-    [HttpDelete("by-name/{name}")]
-    public IActionResult DeleteGenre(string name)
+    // SOFT DELETE
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(int id)
     {
-        var genre = _context.Genres
-            .FirstOrDefault(g => g.Name == name);
+        var genre = await _context.Genres.FindAsync(id);
 
-        if (genre == null) return NotFound();
+        if (genre == null || genre.IsDeleted)
+        {
+            return NotFound(new
+            {
+                success = false,
+                message = "Không tìm thấy genre",
+                data = (object?)null
+            });
+        }
 
-        _context.Genres.Remove(genre);
-        _context.SaveChanges();
+        genre.IsDeleted = true;
+        genre.UpdatedBy = "admin";
+        genre.UpdatedDate = DateTime.Now;
 
-        return Ok();
+        await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            success = true,
+            message = "Xóa genre thành công",
+            data = genre
+        });
     }
 }

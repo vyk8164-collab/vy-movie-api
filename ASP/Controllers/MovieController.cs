@@ -14,59 +14,166 @@ public class MovieController : ControllerBase
         _context = context;
     }
 
-    // GET ALL
+    // GET ALL + Pagination + Search + Filter
     [HttpGet]
-    public IActionResult GetAll()
+    public async Task<IActionResult> GetAll(
+        int page = 1,
+        int pageSize = 10,
+        string? search = null,
+        int? genreId = null)
     {
-        var movies = _context.Movies
-            .Include(m => m.MovieActors)
-                .ThenInclude(ma => ma.Actor)
+        var query = _context.Movies
+            .Where(m => !m.IsDeleted)
+            .AsQueryable();
+
+        // SEARCH
+        if (!string.IsNullOrEmpty(search))
+        {
+            query = query.Where(m => m.Title.Contains(search));
+        }
+
+        // FILTER GENRE
+        if (genreId.HasValue)
+        {
+            query = query.Where(m =>
+                m.MovieGenres.Any(g => g.GenreId == genreId));
+        }
+
+        var movies = await query
             .Include(m => m.MovieGenres)
                 .ThenInclude(mg => mg.Genre)
-            .Include(m => m.Reviews)
-                .ThenInclude(r => r.User) // 👉 thêm luôn cho chuẩn
-            .ToList();
+            .Include(m => m.MovieActors)
+                .ThenInclude(ma => ma.Actor)
+            .Select(m => new
+            {
+                m.Id,
+                m.Title,
+                m.PosterUrl,
+                m.RatingAvg,
 
-        return Ok(movies);
+                Genres = m.MovieGenres.Select(g => g.Genre.Name),
+                Actors = m.MovieActors.Select(a => a.Actor.Name)
+            })
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        return Ok(new
+        {
+            success = true,
+            message = "Lấy danh sách movie thành công",
+            data = movies
+        });
     }
 
     // GET BY ID
     [HttpGet("{id}")]
-    public IActionResult GetById(int id)
+    public async Task<IActionResult> GetById(int id)
     {
-        var movie = _context.Movies
+        var movie = await _context.Movies
+            .Where(m => m.Id == id && !m.IsDeleted)
             .Include(m => m.MovieActors).ThenInclude(ma => ma.Actor)
             .Include(m => m.MovieGenres).ThenInclude(mg => mg.Genre)
             .Include(m => m.Reviews).ThenInclude(r => r.User)
-            .FirstOrDefault(m => m.Id == id);
+            .Select(m => new
+            {
+                m.Id,
+                m.Title,
+                m.Description,
+                m.ReleaseDate,
+                m.Duration,
+                m.RatingAvg,
+                m.PosterUrl,
+                m.TrailerUrl,
 
-        if (movie == null) return NotFound();
+                Actors = m.MovieActors.Select(a => a.Actor.Name),
+                Genres = m.MovieGenres.Select(g => g.Genre.Name),
 
-        return Ok(movie);
+                Reviews = m.Reviews.Select(r => new
+                {
+                    r.Id,
+                    r.Rating,
+                    r.Comment,
+                    r.CreatedAt,
+                    User = r.User.Username // ❌ không trả password
+                })
+            })
+            .FirstOrDefaultAsync();
+
+        if (movie == null)
+        {
+            return NotFound(new
+            {
+                success = false,
+                message = "Không tìm thấy movie",
+                data = (object?)null
+            });
+        }
+
+        return Ok(new
+        {
+            success = true,
+            message = "Lấy dữ liệu thành công",
+            data = movie
+        });
     }
 
     // CREATE
     [HttpPost]
-    public IActionResult Create(Movie movie)
+    public async Task<IActionResult> Create([FromBody] Movie movie)
     {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                message = "Dữ liệu không hợp lệ",
+                data = ModelState
+            });
+        }
+
         movie.CreatedBy = "admin";
         movie.CreatedDate = DateTime.Now;
-
         movie.UpdatedBy = "admin";
         movie.UpdatedDate = DateTime.Now;
+        movie.IsDeleted = false;
 
-        _context.Movies.Add(movie);
-        _context.SaveChanges();
+        await _context.Movies.AddAsync(movie);
+        await _context.SaveChangesAsync();
 
-        return Ok(movie);
+        return Ok(new
+        {
+            success = true,
+            message = "Tạo movie thành công",
+            data = movie
+        });
     }
 
     // UPDATE
     [HttpPut("{id}")]
-    public IActionResult Update(int id, Movie updated)
+    public async Task<IActionResult> Update(int id, [FromBody] Movie updated)
     {
-        var movie = _context.Movies.Find(id);
-        if (movie == null) return NotFound();
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                message = "Dữ liệu không hợp lệ",
+                data = ModelState
+            });
+        }
+
+        var movie = await _context.Movies.FindAsync(id);
+
+        if (movie == null || movie.IsDeleted)
+        {
+            return NotFound(new
+            {
+                success = false,
+                message = "Không tìm thấy movie",
+                data = (object?)null
+            });
+        }
 
         movie.Title = updated.Title;
         movie.Description = updated.Description;
@@ -78,23 +185,43 @@ public class MovieController : ControllerBase
         movie.UpdatedBy = "admin";
         movie.UpdatedDate = DateTime.Now;
 
-        _context.SaveChanges();
+        await _context.SaveChangesAsync();
 
-        return Ok(movie);
+        return Ok(new
+        {
+            success = true,
+            message = "Cập nhật movie thành công",
+            data = movie
+        });
     }
 
-    // DELETE
-    [HttpDelete("by-title/{title}")]
-    public IActionResult DeleteByTitle(string title)
+    // SOFT DELETE
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(int id)
     {
-        var movie = _context.Movies
-            .FirstOrDefault(m => m.Title == title);
+        var movie = await _context.Movies.FindAsync(id);
 
-        if (movie == null) return NotFound();
+        if (movie == null || movie.IsDeleted)
+        {
+            return NotFound(new
+            {
+                success = false,
+                message = "Không tìm thấy movie",
+                data = (object?)null
+            });
+        }
 
-        _context.Movies.Remove(movie);
-        _context.SaveChanges();
+        movie.IsDeleted = true;
+        movie.UpdatedBy = "admin";
+        movie.UpdatedDate = DateTime.Now;
 
-        return Ok();
+        await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            success = true,
+            message = "Xóa movie thành công",
+            data = movie
+        });
     }
 }

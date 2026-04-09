@@ -12,9 +12,10 @@ namespace ConnectDB.Models
         public int MovieId { get; set; }
         public int UserId { get; set; }
 
-        [Range(1, 5)]
+        [Range(1, 5, ErrorMessage = "Rating phải từ 1 đến 5")]
         public int Rating { get; set; }
 
+        [StringLength(1000)]
         public string? Comment { get; set; }
 
         public DateTime CreatedAt { get; set; }
