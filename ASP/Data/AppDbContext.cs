@@ -17,6 +17,8 @@ public class AppDbContext : DbContext
     public DbSet<MovieActor> MovieActors { get; set; }
     public DbSet<MovieGenre> MovieGenres { get; set; }
     public DbSet<User> Users { get; set; }
+    public DbSet<Favorite> Favorites { get; set; }
+    public DbSet<MovieReaction> MovieReactions { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -72,13 +74,43 @@ public class AppDbContext : DbContext
             .WithMany(u => u.Reviews)
             .HasForeignKey(r => r.UserId)
             .OnDelete(DeleteBehavior.Restrict);
-        // ⚠️ tránh xóa user kéo theo mất review
+
+        //modelBuilder.Entity<Review>()
+        //    //.HasIndex(r => new { r.UserId, r.MovieId })
+        //    //.IsUnique();
 
         // ========================
-        // UNIQUE USERNAME
+        // USER
         // ========================
         modelBuilder.Entity<User>()
             .HasIndex(u => u.Username)
             .IsUnique();
+
+        // ========================
+        // FAVORITE
+        // ========================
+        modelBuilder.Entity<Favorite>()
+            .HasIndex(f => new { f.UserId, f.MovieId })
+            .IsUnique();
+
+        // ========================
+        // REACTION (LIKE / DISLIKE)
+        // ========================
+        modelBuilder.Entity<MovieReaction>()
+            .HasIndex(r => new { r.UserId, r.MovieId })
+            .IsUnique(); // mỗi user chỉ reaction 1 lần
+
+        modelBuilder.Entity<MovieReaction>()
+            .HasOne(r => r.Movie)
+            .WithMany(m => m.Reactions)
+            .HasForeignKey(r => r.MovieId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<MovieReaction>()
+            .HasOne(r => r.User)
+            .WithMany()
+            .HasForeignKey(r => r.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
+
 }

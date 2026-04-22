@@ -2,6 +2,8 @@
 using ConnectDB.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -14,162 +16,147 @@ public class ReviewController : ControllerBase
         _context = context;
     }
 
-    // GET theo movie
+    // ========================
+    // 📄 GET REVIEW THEO MOVIE
+    // ========================
     [HttpGet("movie/{movieId}")]
     public async Task<IActionResult> GetByMovie(int movieId)
     {
         var reviews = await _context.Reviews
             .Where(r => r.MovieId == movieId)
             .Include(r => r.User)
+            .OrderByDescending(r => r.CreatedAt)
             .Select(r => new
             {
                 r.Id,
                 r.Rating,
                 r.Comment,
                 r.CreatedAt,
-                User = r.User.Username // ❌ không trả password
+                User = r.User.Username
             })
             .ToListAsync();
 
-        return Ok(new
-        {
-            success = true,
-            message = "Lấy danh sách review thành công",
-            data = reviews
-        });
+        return Ok(new { success = true, data = reviews });
     }
 
-    // POST review (có transaction)
+    // ========================
+    // ⭐ ADD REVIEW
+    // ========================
+    [Authorize]
     [HttpPost]
-    public async Task<IActionResult> AddReview([FromBody] Review review)
+    public async Task<IActionResult> AddReview([FromBody] ReviewRequest req)
     {
-        if (!ModelState.IsValid)
-        {
-            return BadRequest(new
-            {
-                success = false,
-                message = "Dữ liệu không hợp lệ",
-                data = ModelState
-            });
-        }
-
-        var userExists = await _context.Users
-            .AnyAsync(u => u.Id == review.UserId);
-
-        if (!userExists)
-        {
-            return BadRequest(new
-            {
-                success = false,
-                message = "User không tồn tại",
-                data = (object?)null
-            });
-        }
-
-        var movieExists = await _context.Movies
-            .AnyAsync(m => m.Id == review.MovieId && !m.IsDeleted);
-
-        if (!movieExists)
-        {
-            return BadRequest(new
-            {
-                success = false,
-                message = "Movie không tồn tại",
-                data = (object?)null
-            });
-        }
-
-        using var transaction = await _context.Database.BeginTransactionAsync();
-
         try
         {
-            review.CreatedAt = DateTime.Now;
+            // ✅ FIX CHUẨN
+            var userIdStr = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
-            await _context.Reviews.AddAsync(review);
+            if (userIdStr == null)
+                return Unauthorized(new { success = false, message = "Token không hợp lệ" });
+
+            int userId = int.Parse(userIdStr);
+
+            if (req == null || req.MovieId <= 0)
+                return BadRequest(new { success = false, message = "Dữ liệu không hợp lệ" });
+
+            var movieExists = await _context.Movies
+                .AnyAsync(m => m.Id == req.MovieId && !m.IsDeleted);
+
+            if (!movieExists)
+                return BadRequest(new { success = false, message = "Movie không tồn tại" });
+
+            var exists = await _context.Reviews
+                .AnyAsync(r => r.UserId == userId && r.MovieId == req.MovieId);
+
+            if (exists)
+                return BadRequest(new { success = false, message = "Bạn đã review rồi" });
+
+            var review = new Review
+            {
+                MovieId = req.MovieId,
+                UserId = userId,
+                Rating = req.Rating,
+                Comment = req.Comment,
+                CreatedAt = DateTime.Now
+            };
+
+            _context.Reviews.Add(review);
             await _context.SaveChangesAsync();
 
-            await UpdateMovieRating(review.MovieId);
+            await UpdateMovieRating(req.MovieId);
 
-            await transaction.CommitAsync();
-
-            return Ok(new
-            {
-                success = true,
-                message = "Thêm review thành công",
-                data = review
-            });
+            return Ok(new { success = true });
         }
-        catch
+        catch (Exception ex)
         {
-            await transaction.RollbackAsync();
-
             return StatusCode(500, new
             {
                 success = false,
-                message = "Lỗi server",
-                data = (object?)null
+                message = ex.Message
             });
         }
     }
 
-    // DELETE review theo user (có transaction)
-    [HttpDelete("by-user/{userId}")]
-    public async Task<IActionResult> DeleteByUser(int userId)
+    // ========================
+    // ✏️ UPDATE
+    // ========================
+    [Authorize]
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(int id, [FromBody] ReviewRequest req)
     {
-        var reviews = await _context.Reviews
-            .Where(r => r.UserId == userId)
-            .ToListAsync();
+        var userIdStr = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
-        if (!reviews.Any())
-        {
-            return NotFound(new
-            {
-                success = false,
-                message = "Không tìm thấy review",
-                data = (object?)null
-            });
-        }
+        if (userIdStr == null)
+            return Unauthorized();
 
-        var movieIds = reviews
-            .Select(r => r.MovieId)
-            .Distinct()
-            .ToList();
+        int userId = int.Parse(userIdStr);
 
-        using var transaction = await _context.Database.BeginTransactionAsync();
+        var review = await _context.Reviews.FindAsync(id);
 
-        try
-        {
-            _context.Reviews.RemoveRange(reviews);
-            await _context.SaveChangesAsync();
+        if (review == null || review.UserId != userId)
+            return NotFound(new { success = false });
 
-            foreach (var movieId in movieIds)
-            {
-                await UpdateMovieRating(movieId);
-            }
+        review.Rating = req.Rating;
+        review.Comment = req.Comment;
 
-            await transaction.CommitAsync();
+        await _context.SaveChangesAsync();
+        await UpdateMovieRating(review.MovieId);
 
-            return Ok(new
-            {
-                success = true,
-                message = "Xóa review thành công",
-                data = reviews
-            });
-        }
-        catch
-        {
-            await transaction.RollbackAsync();
-
-            return StatusCode(500, new
-            {
-                success = false,
-                message = "Lỗi server",
-                data = (object?)null
-            });
-        }
+        return Ok(new { success = true });
     }
 
-    // 🔥 UPDATE RATING (tối ưu async)
+    // ========================
+    // 🗑️ DELETE
+    // ========================
+    [Authorize]
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var userIdStr = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        if (userIdStr == null)
+            return Unauthorized();
+
+        int userId = int.Parse(userIdStr);
+
+        var review = await _context.Reviews.FindAsync(id);
+
+        if (review == null || review.UserId != userId)
+            return NotFound(new { success = false });
+
+        int movieId = review.MovieId;
+
+        _context.Reviews.Remove(review);
+        await _context.SaveChangesAsync();
+
+        await UpdateMovieRating(movieId);
+
+        return Ok(new { success = true });
+    }
+
+    // ========================
+    // 🔄 UPDATE RATING
+    // ========================
     private async Task UpdateMovieRating(int movieId)
     {
         var movie = await _context.Movies.FindAsync(movieId);
@@ -184,4 +171,12 @@ public class ReviewController : ControllerBase
             await _context.SaveChangesAsync();
         }
     }
+}
+
+// DTO
+public class ReviewRequest
+{
+    public int MovieId { get; set; }
+    public int Rating { get; set; }
+    public string Comment { get; set; }
 }

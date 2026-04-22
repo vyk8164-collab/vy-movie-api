@@ -157,4 +157,37 @@ public class GenreController : ControllerBase
             data = genre
         });
     }
+    // ========================
+    // 🔥 GET GENRE + MOVIES
+    // ========================
+    [HttpGet("with-movies")]
+    public async Task<IActionResult> GetGenresWithMovies()
+    {
+        var genres = await _context.Genres
+            .Where(g => !g.IsDeleted)
+            .Include(g => g.MovieGenres)
+                .ThenInclude(mg => mg.Movie)
+            .Select(g => new
+            {
+                g.Id,
+                g.Name,
+
+                Movies = g.MovieGenres
+                    .Where(mg => mg.Movie != null && !mg.Movie.IsDeleted)
+                    .Select(mg => new
+                    {
+                        mg.Movie.Id,
+                        mg.Movie.Title,
+                        mg.Movie.PosterUrl,
+                        mg.Movie.RatingAvg
+                    })
+            })
+            .ToListAsync();
+
+        return Ok(new
+        {
+            success = true,
+            data = genres
+        });
+    }
 }

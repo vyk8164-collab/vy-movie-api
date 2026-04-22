@@ -20,5 +20,6 @@ namespace ConnectDB.Models
         public string Role { get; set; } = "User";
 
         public ICollection<Review>? Reviews { get; set; }
+        public bool IsLocked { get; set; } = false;
     }
 }

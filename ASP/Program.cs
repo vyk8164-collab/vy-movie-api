@@ -6,11 +6,15 @@ using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. DbContext - Lưu ý: DefaultConnection phải là DB Online (ví dụ Azure hoặc Render Postgres) mới chạy được trên Render
+// =======================
+// 🔥 1. DATABASE
+// =======================
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// 2. JWT Authentication
+// =======================
+// 🔥 2. JWT AUTH
+// =======================
 builder.Services.AddAuthentication("Bearer")
     .AddJwtBearer("Bearer", options =>
     {
@@ -25,58 +29,101 @@ builder.Services.AddAuthentication("Bearer")
             ValidAudience = builder.Configuration["Jwt:Audience"],
 
             IssuerSigningKey = new SymmetricSecurityKey(
-                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"])
+                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!)
             )
         };
     });
 
-// 3. Authorization
+// =======================
+// 🔥 3. AUTHORIZATION
+// =======================
 builder.Services.AddAuthorization();
-builder.Services.AddControllers();
-builder.Services.AddEndpointsApiExplorer();
 
-// Cấu hình Swagger để hỗ trợ nhập Token JWT trực tiếp trên giao diện
+// =======================
+// 🔥 4. CORS (QUAN TRỌNG)
+// =======================
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy
+            .AllowAnyOrigin()
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
+
+// =======================
+// 🔥 5. CONTROLLERS
+// =======================
+builder.Services.AddControllers();
+
+// =======================
+// 🔥 6. SWAGGER
+// =======================
+builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new OpenApiInfo { Title = "Vy Movie API", Version = "v1" });
+    c.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "Vy Movie API",
+        Version = "v1"
+    });
+
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
-        Description = "Nhập Token theo cú pháp: Bearer {token}",
+        Description = "Nhập: Bearer {token}",
         Name = "Authorization",
         In = ParameterLocation.Header,
-        Type = SecuritySchemeType.ApiKey,
-        Scheme = "Bearer"
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT"
     });
+
     c.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
         {
             new OpenApiSecurityScheme
             {
-                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
             },
-            new string[] { }
+            new string[] {}
         }
     });
 });
 
 var app = builder.Build();
 
-// --- FIX SWAGGER CHO RENDER TẠI ĐÂY ---
-// Xóa bỏ if (app.Environment.IsDevelopment()) để Swagger luôn chạy
-app.UseSwagger();
-app.UseSwaggerUI(options =>
-{
-    options.SwaggerEndpoint("/swagger/v1/swagger.json", "v1");
-    options.RoutePrefix = string.Empty; // Mở link https://vy-movie-api-1.onrender.com/ là ra Swagger luôn
-});
-// --------------------------------------
+// =======================
+// 🔥 7. MIDDLEWARE ORDER
+// =======================
 
+// Swagger (dev)
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Vy Movie API v1");
+        c.RoutePrefix = "swagger";
+    });
+}
+
+// HTTPS
 app.UseHttpsRedirection();
 
-// QUAN TRỌNG: thứ tự Middleware
+// 🔥 CORS phải trước auth
+app.UseCors("AllowAll");
+
+// Auth
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Map API
 app.MapControllers();
 
 app.Run();

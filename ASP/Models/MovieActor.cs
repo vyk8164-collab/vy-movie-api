@@ -11,5 +11,8 @@ namespace ConnectDB.Models
         // navigation
         public Movie? Movie { get; set; }
         public Actor? Actor { get; set; }
+
+        // ❌ XÓA CÁI NÀY (gây lỗi)
+        // public ICollection<MovieActor> MovieActors { get; set; }
     }
 }

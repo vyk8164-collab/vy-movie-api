@@ -4,6 +4,7 @@ using ConnectDB.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ASP.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260416142126_AddFavoriteTable")]
+    partial class AddFavoriteTable
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -140,17 +143,11 @@ namespace ASP.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
 
-                    b.Property<int>("DislikeCount")
-                        .HasColumnType("int");
-
                     b.Property<int>("Duration")
                         .HasColumnType("int");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
-
-                    b.Property<int>("LikeCount")
-                        .HasColumnType("int");
 
                     b.Property<string>("PosterUrl")
                         .HasColumnType("nvarchar(max)");
@@ -177,9 +174,6 @@ namespace ASP.Migrations
 
                     b.Property<string>("VideoUrl")
                         .HasColumnType("nvarchar(max)");
-
-                    b.Property<int>("ViewCount")
-                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
@@ -216,33 +210,6 @@ namespace ASP.Migrations
                     b.ToTable("MovieGenres");
                 });
 
-            modelBuilder.Entity("ConnectDB.Models.MovieReaction", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<bool>("IsLike")
-                        .HasColumnType("bit");
-
-                    b.Property<int>("MovieId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("UserId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("MovieId");
-
-                    b.HasIndex("UserId", "MovieId")
-                        .IsUnique();
-
-                    b.ToTable("MovieReactions");
-                });
-
             modelBuilder.Entity("ConnectDB.Models.Review", b =>
                 {
                     b.Property<int>("Id")
@@ -271,8 +238,7 @@ namespace ASP.Migrations
 
                     b.HasIndex("MovieId");
 
-                    b.HasIndex("UserId", "MovieId")
-                        .IsUnique();
+                    b.HasIndex("UserId");
 
                     b.ToTable("Reviews");
                 });
@@ -284,9 +250,6 @@ namespace ASP.Migrations
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<bool>("IsLocked")
-                        .HasColumnType("bit");
 
                     b.Property<string>("Password")
                         .IsRequired()
@@ -366,25 +329,6 @@ namespace ASP.Migrations
                     b.Navigation("Movie");
                 });
 
-            modelBuilder.Entity("ConnectDB.Models.MovieReaction", b =>
-                {
-                    b.HasOne("ConnectDB.Models.Movie", "Movie")
-                        .WithMany("Reactions")
-                        .HasForeignKey("MovieId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("ConnectDB.Models.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Movie");
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("ConnectDB.Models.Review", b =>
                 {
                     b.HasOne("ConnectDB.Models.Movie", "Movie")
@@ -419,8 +363,6 @@ namespace ASP.Migrations
                     b.Navigation("MovieActors");
 
                     b.Navigation("MovieGenres");
-
-                    b.Navigation("Reactions");
 
                     b.Navigation("Reviews");
                 });

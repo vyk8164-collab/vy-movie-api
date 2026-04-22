@@ -1,8 +1,11 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Authorization;
 using ConnectDB.Data;
 using ConnectDB.Models;
+using ConnectDB.Models.DTOs;
+using ConnectDB.Utils;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -16,225 +19,337 @@ public class MovieController : ControllerBase
     }
 
     // ========================
-    // GET ALL (PUBLIC)
+    // 🔥 CREATE
+    // ========================
+    [HttpPost]
+    public async Task<IActionResult> Create([FromBody] CreateMovieDto data)
+    {
+        if (data == null || string.IsNullOrWhiteSpace(data.Title))
+            return BadRequest(new { success = false });
+
+        var videoEmbed = YouTubeHelper.ToEmbedUrl(data.VideoUrl);
+        var trailerEmbed = YouTubeHelper.ToEmbedUrl(data.TrailerUrl);
+        var poster = ResolvePoster(data.PosterUrl, videoEmbed);
+
+        var movie = new Movie
+        {
+            Title = data.Title,
+            Description = data.Description,
+            ReleaseDate = data.ReleaseDate ?? DateTime.Now,
+            Duration = data.Duration ?? 0,
+            PosterUrl = poster,
+            VideoUrl = videoEmbed,
+            TrailerUrl = trailerEmbed,
+            ViewCount = 0,
+            CreatedBy = "admin",
+            CreatedDate = DateTime.Now
+        };
+
+        _context.Movies.Add(movie);
+        await _context.SaveChangesAsync();
+
+        return Ok(new { success = true, data = movie });
+    }
+
+    // ========================
+    // ✏️ UPDATE (🔥 FIX 405)
+    // ========================
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(int id, [FromBody] CreateMovieDto data)
+    {
+        var movie = await _context.Movies
+            .Include(m => m.MovieGenres)
+            .FirstOrDefaultAsync(m => m.Id == id);
+
+        if (movie == null)
+            return NotFound(new { success = false });
+
+        movie.Title = data.Title;
+        movie.Description = data.Description;
+        movie.Duration = data.Duration ?? 0;
+        movie.VideoUrl = YouTubeHelper.ToEmbedUrl(data.VideoUrl);
+        movie.TrailerUrl = YouTubeHelper.ToEmbedUrl(data.TrailerUrl);
+
+        if (!string.IsNullOrWhiteSpace(data.PosterUrl))
+            movie.PosterUrl = data.PosterUrl;
+
+        // 🔥 update genres
+        movie.MovieGenres.Clear();
+
+        if (data.GenreIds != null)
+        {
+            foreach (var gid in data.GenreIds)
+            {
+                movie.MovieGenres.Add(new MovieGenre
+                {
+                    MovieId = id,
+                    GenreId = gid
+                });
+            }
+        }
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new { success = true });
+    }
+
+    // ========================
+    // 📄 GET ALL
     // ========================
     [HttpGet]
-    public async Task<IActionResult> GetAll(
-        int page = 1,
-        int pageSize = 10,
-        string? search = null,
-        int? genreId = null)
+    public async Task<IActionResult> GetAll(int page = 1, int pageSize = 10)
     {
         var query = _context.Movies
             .Where(m => !m.IsDeleted)
-            .AsQueryable();
+            .Include(m => m.MovieGenres).ThenInclude(mg => mg.Genre)
+            .Include(m => m.MovieActors).ThenInclude(ma => ma.Actor)
+            .Include(m => m.Reviews)
+            .Include(m => m.Reactions);
 
-        // SEARCH
-        if (!string.IsNullOrEmpty(search))
-        {
-            query = query.Where(m => m.Title.Contains(search));
-        }
-
-        // FILTER GENRE
-        if (genreId.HasValue)
-        {
-            query = query.Where(m =>
-                m.MovieGenres.Any(g => g.GenreId == genreId));
-        }
+        var totalItems = await query.CountAsync();
 
         var movies = await query
-            .Include(m => m.MovieGenres)
-                .ThenInclude(mg => mg.Genre)
-            .Include(m => m.MovieActors)
-                .ThenInclude(ma => ma.Actor)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .Select(m => new
             {
                 m.Id,
                 m.Title,
                 m.PosterUrl,
+                m.Duration,
                 m.RatingAvg,
+                m.ViewCount,
+                m.VideoUrl,
+
+                ReviewCount = m.Reviews.Count(),
+
+                LikeCount = m.Reactions.Count(r => r.IsLike),
+                DislikeCount = m.Reactions.Count(r => !r.IsLike),
+
                 Genres = m.MovieGenres.Select(g => g.Genre.Name),
                 Actors = m.MovieActors.Select(a => a.Actor.Name)
             })
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
             .ToListAsync();
 
         return Ok(new
         {
             success = true,
-            message = "Lấy danh sách movie thành công",
-            data = movies
+            data = movies,
+            pagination = new
+            {
+                page,
+                pageSize,
+                totalItems,
+                totalPages = (int)Math.Ceiling((double)totalItems / pageSize)
+            }
         });
     }
 
     // ========================
-    // GET BY ID (PUBLIC)
+    // 🎬 GET BY ID
     // ========================
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
         var movie = await _context.Movies
-            .Where(m => m.Id == id && !m.IsDeleted)
-            .Include(m => m.MovieActors).ThenInclude(ma => ma.Actor)
             .Include(m => m.MovieGenres).ThenInclude(mg => mg.Genre)
+            .Include(m => m.MovieActors).ThenInclude(ma => ma.Actor)
+            .Include(m => m.Reactions)
             .Include(m => m.Reviews).ThenInclude(r => r.User)
-            .Select(m => new
-            {
-                m.Id,
-                m.Title,
-                m.Description,
-                m.ReleaseDate,
-                m.Duration,
-                m.RatingAvg,
-                m.PosterUrl,
-                m.TrailerUrl,
-
-                Actors = m.MovieActors.Select(a => a.Actor.Name),
-                Genres = m.MovieGenres.Select(g => g.Genre.Name),
-
-                Reviews = m.Reviews.Select(r => new
-                {
-                    r.Id,
-                    r.Rating,
-                    r.Comment,
-                    r.CreatedAt,
-                    User = r.User.Username
-                })
-            })
-            .FirstOrDefaultAsync();
+            .FirstOrDefaultAsync(m => m.Id == id && !m.IsDeleted);
 
         if (movie == null)
-        {
-            return NotFound(new
-            {
-                success = false,
-                message = "Không tìm thấy movie",
-                data = (object?)null
-            });
-        }
+            return NotFound(new { success = false });
 
         return Ok(new
         {
             success = true,
-            message = "Lấy dữ liệu thành công",
-            data = movie
+            data = new
+            {
+                movie.Id,
+                movie.Title,
+                movie.Description,
+                movie.PosterUrl,
+                movie.VideoUrl,
+                movie.TrailerUrl,
+                movie.Duration,
+                movie.RatingAvg,
+                movie.ViewCount,
+
+                LikeCount = movie.Reactions.Count(r => r.IsLike),
+                DislikeCount = movie.Reactions.Count(r => !r.IsLike),
+                ReviewCount = movie.Reviews.Count(),
+
+                Reviews = movie.Reviews.Select(r => new
+                {
+                    r.Id,
+                    r.Comment,
+                    r.Rating,
+                    User = r.User != null ? r.User.Username : "Ẩn danh",
+                    r.CreatedAt
+                }),
+
+                Genres = movie.MovieGenres.Select(g => g.Genre.Name),
+                Actors = movie.MovieActors.Select(a => a.Actor.Name)
+            }
         });
     }
 
     // ========================
-    // CREATE (ADMIN ONLY)
+    // 👁 VIEW
     // ========================
-    [Authorize(Roles = "Admin")]
-    [HttpPost]
-    public async Task<IActionResult> Create([FromBody] Movie movie)
+    [HttpPost("{id}/view")]
+    public async Task<IActionResult> AddView(int id)
     {
-        if (!ModelState.IsValid)
-        {
-            return BadRequest(new
-            {
-                success = false,
-                message = "Dữ liệu không hợp lệ",
-                data = ModelState
-            });
-        }
-
-        movie.CreatedBy = "admin";
-        movie.CreatedDate = DateTime.Now;
-        movie.UpdatedBy = "admin";
-        movie.UpdatedDate = DateTime.Now;
-        movie.IsDeleted = false;
-
-        await _context.Movies.AddAsync(movie);
-        await _context.SaveChangesAsync();
-
-        return Ok(new
-        {
-            success = true,
-            message = "Tạo movie thành công",
-            data = movie
-        });
-    }
-
-    // ========================
-    // UPDATE (ADMIN ONLY)
-    // ========================
-    [Authorize(Roles = "Admin")]
-    [HttpPut("{id}")]
-    public async Task<IActionResult> Update(int id, [FromBody] Movie updated)
-    {
-        if (!ModelState.IsValid)
-        {
-            return BadRequest(new
-            {
-                success = false,
-                message = "Dữ liệu không hợp lệ",
-                data = ModelState
-            });
-        }
-
         var movie = await _context.Movies.FindAsync(id);
 
-        if (movie == null || movie.IsDeleted)
-        {
-            return NotFound(new
-            {
-                success = false,
-                message = "Không tìm thấy movie",
-                data = (object?)null
-            });
-        }
+        if (movie == null)
+            return NotFound(new { success = false });
 
-        movie.Title = updated.Title;
-        movie.Description = updated.Description;
-        movie.ReleaseDate = updated.ReleaseDate;
-        movie.Duration = updated.Duration;
-        movie.PosterUrl = updated.PosterUrl;
-        movie.TrailerUrl = updated.TrailerUrl;
-
-        movie.UpdatedBy = "admin";
-        movie.UpdatedDate = DateTime.Now;
-
+        movie.ViewCount++;
         await _context.SaveChangesAsync();
 
-        return Ok(new
-        {
-            success = true,
-            message = "Cập nhật movie thành công",
-            data = movie
-        });
+        return Ok(new { success = true });
     }
 
     // ========================
-    // DELETE (ADMIN ONLY)
+    // 👍 REACT (🔥 FIX 500)
     // ========================
-    [Authorize(Roles = "Admin")]
+    [Authorize]
+    [HttpPost("{id}/react")]
+    public async Task<IActionResult> React(int id, bool isLike)
+    {
+        var userIdStr = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        if (userIdStr == null)
+            return Unauthorized();
+
+        int userId = int.Parse(userIdStr);
+
+        var movieExists = await _context.Movies.AnyAsync(x => x.Id == id);
+        if (!movieExists)
+            return NotFound(new { success = false });
+
+        var existing = await _context.MovieReactions
+            .FirstOrDefaultAsync(x => x.MovieId == id && x.UserId == userId);
+
+        if (existing != null)
+        {
+            existing.IsLike = isLike;
+        }
+        else
+        {
+            _context.MovieReactions.Add(new MovieReaction
+            {
+                MovieId = id,
+                UserId = userId,
+                IsLike = isLike
+            });
+        }
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new { success = true });
+    }
+
+    // ========================
+    // ❤️ FAVORITE
+    // ========================
+    [Authorize]
+    [HttpPost("{id}/favorite")]
+    public async Task<IActionResult> ToggleFavorite(int id)
+    {
+        var userIdStr = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        if (userIdStr == null)
+            return Unauthorized();
+
+        int userId = int.Parse(userIdStr);
+
+        var fav = await _context.Favorites
+            .FirstOrDefaultAsync(f => f.MovieId == id && f.UserId == userId);
+
+        if (fav != null)
+            _context.Favorites.Remove(fav);
+        else
+            _context.Favorites.Add(new Favorite { MovieId = id, UserId = userId });
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new { success = true });
+    }
+
+    // ========================
+    // ⭐ REVIEW (🔥 FIX FK ERROR)
+    // ========================
+    [Authorize]
+    [HttpPost("{id}/review")]
+    public async Task<IActionResult> AddReview(int id, [FromBody] Review data)
+    {
+        var userIdStr = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        if (userIdStr == null)
+            return Unauthorized();
+
+        int userId = int.Parse(userIdStr);
+
+        var userExists = await _context.Users.AnyAsync(u => u.Id == userId);
+        if (!userExists)
+            return BadRequest(new { success = false, message = "User không tồn tại" });
+
+        data.MovieId = id;
+        data.UserId = userId;
+        data.CreatedAt = DateTime.Now;
+
+        _context.Reviews.Add(data);
+        await _context.SaveChangesAsync();
+
+        var avg = await _context.Reviews
+            .Where(r => r.MovieId == id)
+            .AverageAsync(r => r.Rating);
+
+        var movie = await _context.Movies.FindAsync(id);
+        if (movie != null)
+        {
+            movie.RatingAvg = avg;
+            await _context.SaveChangesAsync();
+        }
+
+        return Ok(new { success = true });
+    }
+
+    // ========================
+    // ❌ DELETE
+    // ========================
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
         var movie = await _context.Movies.FindAsync(id);
 
-        if (movie == null || movie.IsDeleted)
-        {
-            return NotFound(new
-            {
-                success = false,
-                message = "Không tìm thấy movie",
-                data = (object?)null
-            });
-        }
+        if (movie == null)
+            return NotFound(new { success = false });
 
         movie.IsDeleted = true;
-        movie.UpdatedBy = "admin";
-        movie.UpdatedDate = DateTime.Now;
-
         await _context.SaveChangesAsync();
 
-        return Ok(new
+        return Ok(new { success = true });
+    }
+
+    // ========================
+    // HELPER
+    // ========================
+    private string ResolvePoster(string? posterUrl, string? videoEmbed)
+    {
+        if (!string.IsNullOrWhiteSpace(posterUrl) && posterUrl.StartsWith("http"))
+            return posterUrl;
+
+        if (!string.IsNullOrEmpty(videoEmbed))
         {
-            success = true,
-            message = "Xóa movie thành công",
-            data = movie
-        });
+            var videoId = YouTubeHelper.GetVideoId(videoEmbed);
+            if (!string.IsNullOrEmpty(videoId))
+                return $"https://img.youtube.com/vi/{videoId}/hqdefault.jpg"; // 🔥 fix 404
+        }
+
+        return "https://dummyimage.com/300x450/cccccc/000000&text=No+Image";
     }
 }
